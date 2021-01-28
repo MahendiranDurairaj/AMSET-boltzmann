@@ -1,7 +1,6 @@
 import logging
 
 import numpy as np
-
 from pymatgen import Lattice
 from pymatgen.analysis.elasticity.strain import Deformation
 from pymatgen.core.tensors import TensorMapping
