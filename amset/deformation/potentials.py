@@ -1,6 +1,8 @@
 import logging
 
 import numpy as np
+
+from pymatgen import Lattice
 from pymatgen.analysis.elasticity.strain import Deformation
 from pymatgen.core.tensors import TensorMapping
 from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
@@ -14,6 +16,7 @@ from amset.electronic_structure.kpoints import (
 from amset.electronic_structure.symmetry import (
     expand_bandstructure,
     rotate_bandstructure,
+    similarity_transformation,
 )
 
 __author__ = "Alex Ganose"
@@ -60,8 +63,8 @@ def get_symmetrized_strain_mapping(
     bulk_structure, strain_mapping, symprec=defaults["symprec"]
 ):
     sga = SpacegroupAnalyzer(bulk_structure, symprec=symprec)
-    cart_ops = sga.get_symmetry_operations(cartesian=True)
-    frac_ops = sga.get_symmetry_operations(cartesian=False)
+    cart_ops, frac_ops = sga.get_symmetry_operations(cartesian=True, return_both=True)
+    # frac_ops = sga.get_symmetry_operations(cartesian=False)
     for strain, calc in strain_mapping.items():
         # expand band structure to cover full brillouin zone, otherwise rotation won't
         # include all necessary points
@@ -74,7 +77,35 @@ def get_symmetrized_strain_mapping(
             tstrain = strain.transform(cart_op)
             independent = tstrain.get_deformation_matrix().is_independent(_mapping_tol)
             if independent and tstrain not in strain_mapping:
-                rband = rotate_bandstructure(calc["bandstructure"], frac_op)
+                print("OP\n", cart_op.rotation_matrix.round(3))
+                print("FOP\n", frac_op.rotation_matrix.round(3))
+                print("strain\n", strain.round(3))
+                print("tstrain\n", tstrain.round(3))
+                print(
+                    "similarity strain\n",
+                    similarity_transformation(cart_op.rotation_matrix, strain).round(5),
+                )
+                rband = rotate_bandstructure(calc["bandstructure"], frac_op, cart_op)
+                print("lattice\n", calc["bandstructure"].structure.lattice.matrix)
+                print("tlattice\n", rband.structure.lattice.matrix)
+                print(
+                    "slattice\n",
+                    similarity_transformation(
+                        cart_op.rotation_matrix,
+                        calc["bandstructure"].structure.lattice.matrix,
+                    ).round(5),
+                )
+                print("lattice abc\n", calc["bandstructure"].structure.lattice.abc)
+                print("tlattice abc\n", rband.structure.lattice.abc)
+                print(
+                    "slattice abc\n",
+                    Lattice(
+                        similarity_transformation(
+                            cart_op.rotation_matrix,
+                            calc["bandstructure"].structure.lattice.matrix,
+                        )
+                    ).abc,
+                )
                 tcalc = {"reference": calc["reference"], "bandstructure": rband}
                 strain_mapping[tstrain] = tcalc
 
@@ -101,6 +132,14 @@ def get_strain_deformation_potential(
     deform_indices = get_kpoint_indices(deform_kpoints, mesh, is_shifted=is_shifted)
 
     if not set(indices_to_keep).issubset(set(deform_indices)):
+        print(kpoints)
+        print(deform_kpoints)
+        # c        print("missing")
+        #         missing = np.array(list(set(indices_to_keep).difference(set(deform_indices))))
+        #         extra = np.array(list(set(deform_indices).difference(set(indices_to_keep))))
+        #         print()
+
+        # print(set(indices_to_keep).difference(set(deform_indices)))
         raise RuntimeError(
             "Deformation band structure doesn't contain the same k-points "
             "as the bulk band structure. Try changing symprec."
@@ -126,6 +165,7 @@ def calculate_deformation_potentials(bulk_calculation, strain_mapping):
     }
     norm = np.zeros((3, 3))
     for strain, deformation_calculation in strain_mapping.items():
+        # print(strain)
         deform = get_strain_deformation_potential(
             strain,
             bulk_calculation["bandstructure"],

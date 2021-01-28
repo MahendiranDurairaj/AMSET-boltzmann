@@ -174,6 +174,9 @@ def get_reciprocal_point_group_operations(
     from pymatgen.symmetry.analyzer import SpacegroupAnalyzer
 
     sga = SpacegroupAnalyzer(structure, symprec=symprec)
+    if sga.get_symmetry_dataset() is None:
+        sga = SpacegroupAnalyzer(structure, symprec=symprec, angle_tolerance=-1)
+
     rotations = sga.get_symmetry_dataset()["rotations"].transpose((0, 2, 1))
     translations = sga.get_symmetry_dataset()["translations"]
     is_tr = np.full(len(rotations), False, dtype=bool)
@@ -213,18 +216,23 @@ def expand_bandstructure(
     )
 
 
-def rotate_bandstructure(bandstructure: BandStructure, frac_symop: SymmOp):
+def rotate_bandstructure(bandstructure: BandStructure, frac_symop: SymmOp, cart_symop):
     """Won't rotate projections..."""
-    kpoints = get_kpoints_from_bandstructure(bandstructure)
-    recip_rot = frac_symop.rotation_matrix.T
-    rot_kpoints = np.dot(recip_rot, kpoints.T).T
 
-    # map to first BZ, use VASP zone boundary convention
-    rot_kpoints = kpoints_to_first_bz(rot_kpoints, negative_zone_boundary=False)
+    kpoints = get_kpoints_from_bandstructure(bandstructure, cartesian=True)
 
     # rotate structure
     structure = bandstructure.structure.copy()
-    structure.apply_operation(frac_symop, fractional=True)
+    structure.apply_operation(cart_symop, fractional=False)
+
+    recip_rot = cart_symop.rotation_matrix
+    rot_kpoints = np.dot(recip_rot, kpoints.T).T
+    rot_kpoints = structure.lattice.reciprocal_lattice.get_fractional_coords(
+        rot_kpoints
+    ).round(8)
+
+    # map to first BZ, use VASP zone boundary convention
+    rot_kpoints = kpoints_to_first_bz(rot_kpoints, negative_zone_boundary=False)
 
     return BandStructure(
         rot_kpoints,

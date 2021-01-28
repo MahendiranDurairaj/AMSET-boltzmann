@@ -220,6 +220,6 @@ def get_kpoint_indices(kpoints, mesh, is_shifted=False):
 
 def get_kpoints_from_bandstructure(bandstructure, cartesian=False):
     if cartesian:
-        return np.array([k.coords for k in bandstructure.kpoints])
+        return np.array([k.cart_coords for k in bandstructure.kpoints])
     else:
         return np.array([k.frac_coords for k in bandstructure.kpoints])
